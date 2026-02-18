@@ -1,14 +1,10 @@
-
 import { GoogleGenAI } from "@google/genai";
-import { LogoRequest, LogoStyle } from "../types";
+import { LogoRequest, LogoStyle } from "../types.ts";
 
 export class GeminiService {
   private static instance: GeminiService;
-  private ai: GoogleGenAI;
 
-  private constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-  }
+  private constructor() {}
 
   public static getInstance(): GeminiService {
     if (!GeminiService.instance) {
@@ -18,28 +14,30 @@ export class GeminiService {
   }
 
   public async generateLogo(request: LogoRequest): Promise<string> {
-    const { brandName, slogan, industry, style, palette, customDetails } = request;
-
+    const { brandName, industry, style, palette, customDetails } = request;
     const stylePrompt = this.getStylePrompt(style);
     
+    // Improved prompt for better vector-like results
     const prompt = `
-      Create a high-end, professional MINIMALIST vector logo for a brand named "${brandName}".
+      Design a professional, high-end MINIMALIST logo for "${brandName}".
       Industry: ${industry}.
-      ${slogan ? `Slogan: "${slogan}".` : ''}
-      Style: ${stylePrompt}.
-      Color Palette: ${palette}.
-      Visual Requirements:
-      - MANDATORY: Solid, pure white background (#FFFFFF). Absolutely no textures or shadows on the background.
-      - Clean sharp lines, flat design, modern aesthetic.
-      - Iconic and memorable simplicity.
-      - High contrast.
-      - ${customDetails || 'Professional and modern aesthetic.'}
-      - Do NOT include mockups, photorealistic backgrounds, or complex textures. 
-      - The logo mark should be clearly separated from the background.
+      Design Aesthetic: ${stylePrompt}.
+      Target Color Palette: ${palette}.
+      
+      CRITICAL DESIGN RULES:
+      1. Background MUST be solid, pure #FFFFFF white. No mockups, shadows, or textures.
+      2. The mark must be clean, balanced, and sophisticated.
+      3. Use sharp, well-defined paths as if it were a vector graphic.
+      4. Avoid complex gradients or small intricate details.
+      5. Context: ${customDetails || 'Modern, clean, and elegant identity.'}
+      
+      Deliver the logo mark clearly centered on a white background.
     `.trim();
 
     try {
-      const response = await this.ai.models.generateContent({
+      // Direct use of process.env.API_KEY as per guidelines
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
           parts: [{ text: prompt }]
@@ -51,32 +49,37 @@ export class GeminiService {
         }
       });
 
-      // Find the image part in the response
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) {
-          return `data:image/png;base64,${part.inlineData.data}`;
-        }
+      const parts = response.candidates?.[0]?.content?.parts || [];
+      const imagePart = parts.find(p => p.inlineData);
+      
+      if (imagePart?.inlineData) {
+        return `data:image/png;base64,${imagePart.inlineData.data}`;
       }
 
-      throw new Error("No image data found in response");
-    } catch (error) {
-      console.error("Error generating logo:", error);
-      throw error;
+      throw new Error("The model did not return an image. Please refine your brand description.");
+    } catch (error: any) {
+      console.error("Gemini Error:", error);
+      // More helpful error messages for the user
+      const msg = error.message || "";
+      if (msg.includes("API key")) {
+        throw new Error("System Configuration Error: API Key is missing or invalid.");
+      }
+      throw new Error(error.message || "Unable to generate your design at this moment.");
     }
   }
 
   private getStylePrompt(style: LogoStyle): string {
     switch (style) {
       case LogoStyle.GEOMETRIC:
-        return "Built with basic geometric shapes (circles, squares, triangles), mathematically balanced.";
+        return "Mathematically perfect geometric forms, balanced symmetry, Bauhaus influence.";
       case LogoStyle.TYPOGRAPHIC:
-        return "Focus on unique custom lettering or a stylized wordmark, elegant font-driven design.";
+        return "Minimalist custom wordmark, refined kerning, modern sans-serif or elegant serif character.";
       case LogoStyle.ABSTRACT:
-        return "Non-representational marks that convey the brand's essence through form and color.";
+        return "Non-representational symbolic mark that captures brand essence through pure form.";
       case LogoStyle.MONOLINE:
-        return "Consistent line weight throughout the design, clean and modern line art.";
+        return "Consistent line weight throughout, clean modern line art, architectural clarity.";
       case LogoStyle.MINIMALIST_PICTORIAL:
-        return "A highly simplified, iconic representation of a physical object related to the industry.";
+        return "A single, highly simplified icon representing a relevant object, reduced to its core geometry.";
       default:
         return "Minimalist and clean.";
     }
